@@ -1,0 +1,42 @@
+{
+  "name": "umurongo",
+  "private": true,
+  "description": "Umurongo: hospital patient flow. Know your place. Know your next step.",
+  "workspaces": [
+    "packages/shared",
+    "Umurongo_backend",
+    "Umurongo_frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c blue,green \"npm run dev -w @umurongo/api\" \"npm run dev -w @umurongo/web\"",
+    "dev:api": "npm run dev -w @umurongo/api",
+    "dev:web": "npm run dev -w @umurongo/web",
+    "build": "npm run build -w @umurongo/web",
+    "test": "npm test --workspaces --if-present",
+    "db:up": "docker compose up -d db",
+    "db:migrate": "npm run db:migrate -w @umurongo/api",
+    "db:seed": "npm run db:seed -w @umurongo/api",
+    "db:reset": "npm run db:reset -w @umurongo/api",
+    "db:start": "node scripts/pg-local.mjs start",
+    "db:stop": "node scripts/pg-local.mjs stop",
+    "test:e2e": "playwright test",
+    "job": "npm run job -w @umurongo/api --"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.65.1",
+    "concurrently": "^9.1.0",
+    "dotenv": "^16.6.1",
+    "tsx": "^4.23.15"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "allowScripts": {
+    "@prisma/client@6.19.3": true,
+    "bcrypt@6.0.0": true,
+    "prisma@6.19.3": true,
+    "@prisma/engines@6.19.3": true,
+    "esbuild@0.28.2": true,
+    "esbuild@0.21.5": true
+  }
+}

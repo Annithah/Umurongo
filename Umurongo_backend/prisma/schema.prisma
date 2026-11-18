@@ -1,0 +1,345 @@
+// Umurongo data model, pilot 1. Enums are mirrored in packages/shared/src/types.ts.
+//
+// Privacy by design:
+// - No medical data (no diagnosis, vitals or prescriptions), no National ID, no photos.
+// - A patient exists only as a ticket: a display name (first name or initials), an optional
+//   phone number for SMS, and a random link token. There are no patient accounts.
+// - Phone numbers are removed by the retention job after Hospital.retentionDays.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum StaffRole {
+  RECEPTIONIST
+  CLINICIAN
+  COUNTER
+  HOSPITAL_ADMIN
+}
+
+enum StaffStatus {
+  AVAILABLE
+  IN_CONSULTATION
+  IN_SURGERY
+  ON_BREAK
+  AWAY
+  OFF_DUTY
+}
+
+enum DepartmentKind {
+  CONSULTATION
+  LAB
+  CASHIER
+  PHARMACY
+  IMAGING
+  OTHER
+}
+
+enum Language {
+  RW
+  EN
+}
+
+enum Priority {
+  NORMAL
+  PRIORITY
+  EMERGENCY
+}
+
+enum PriorityReason {
+  NONE
+  PREGNANT
+  ELDERLY
+  DISABILITY
+  CHILD_UNDER_5
+}
+
+enum Channel {
+  WALK_IN
+  NEXT_STEP
+}
+
+enum TicketStatus {
+  WAITING
+  CHECKED_IN
+  CALLED
+  IN_CONSULTATION
+  DONE
+  REFERRED
+  NO_SHOW
+  CANCELLED
+  CLOSED
+}
+
+enum SmsStatus {
+  SIMULATED
+  QUEUED
+  SENT
+  DELIVERED
+  FAILED
+}
+
+enum FeedbackAnswer {
+  YES
+  NO
+}
+
+model Hospital {
+  id                    String   @id @default(cuid())
+  name                  String
+  district              String
+  address               String
+  // SMS sender ID registered with the SMS provider (max 11 characters).
+  smsSenderId           String   @default("UMURONGO")
+  feedbackSmsEnabled    Boolean  @default(true)
+  // Queue settings (see packages/shared queue rules).
+  defaultConsultMinutes Int      @default(12)
+  getReadyAhead         Int      @default(3)
+  graceMinutes          Int      @default(10)
+  retentionDays         Int      @default(30)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  departments Department[]
+  rooms       Room[]
+  staff       Staff[]
+  tickets     Ticket[]
+  visits      Visit[]
+  callLogs    CallLog[]
+  auditLogs   AuditLog[]
+  smsMessages SmsMessage[]
+}
+
+model Department {
+  id             String         @id @default(cuid())
+  hospitalId     String
+  code           String // e.g. OPD, LAB, CSH, PHA
+  kind           DepartmentKind @default(CONSULTATION)
+  nameEn         String
+  nameRw         String
+  prefix         String
+  // Average minutes per patient; null = use Hospital.defaultConsultMinutes.
+  avgMinutes     Int?
+  isOpen         Boolean        @default(true)
+  opensAt        String         @default("07:00")
+  closesAt       String         @default("19:00")
+  lastClosedOn   String? // Kigali date "YYYY-MM-DD" of the last daily close
+  locationEn     String         @default("")
+  locationRw     String         @default("")
+  // "What to bring": one item per line.
+  requirementsEn String         @default("")
+  requirementsRw String         @default("")
+  showOnTv       Boolean        @default(true)
+  sortOrder      Int            @default(0)
+  // Daily ticket counter: reset when counterDate is not today (see packages/shared queue rules).
+  dailyCounter   Int            @default(0)
+  counterDate    DateTime       @default(now()) @db.Date
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  hospital Hospital @relation(fields: [hospitalId], references: [id])
+  rooms    Room[]
+  staff    Staff[]
+  tickets  Ticket[]
+
+  @@unique([hospitalId, code])
+}
+
+model Room {
+  id           String   @id @default(cuid())
+  hospitalId   String
+  departmentId String?
+  name         String
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  hospital   Hospital    @relation(fields: [hospitalId], references: [id])
+  department Department? @relation(fields: [departmentId], references: [id])
+  staff      Staff[]
+
+  @@unique([hospitalId, name])
+}
+
+model Staff {
+  id              String      @id @default(cuid())
+  hospitalId      String
+  departmentId    String?
+  roomId          String?
+  fullName        String
+  email           String      @unique
+  // Null until the person sets a password from their invite link.
+  passwordHash    String?
+  inviteTokenHash String?     @unique
+  inviteExpiresAt DateTime?
+  role            StaffRole
+  title           String      @default("")
+  status          StaffStatus @default(OFF_DUTY)
+  backAt          DateTime?
+  active          Boolean     @default(true)
+  lastLoginAt     DateTime?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  hospital        Hospital    @relation(fields: [hospitalId], references: [id])
+  department      Department? @relation(fields: [departmentId], references: [id])
+  room            Room?       @relation(fields: [roomId], references: [id])
+  assignedTickets Ticket[]    @relation("TicketStaff")
+  preferredBy     Ticket[]    @relation("TicketPreferredStaff")
+  auditLogs       AuditLog[]
+}
+
+/** One person's trip through the hospital: the chain of tickets OPD -> LAB -> PHA. */
+model Visit {
+  id                  String          @id @default(cuid())
+  hospitalId          String
+  startedAt           DateTime        @default(now())
+  finishedAt          DateTime?
+  feedbackRequestedAt DateTime?
+  feedbackAnswer      FeedbackAnswer?
+  feedbackAt          DateTime?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  hospital Hospital @relation(fields: [hospitalId], references: [id])
+  tickets  Ticket[]
+}
+
+model Ticket {
+  id               String         @id @default(cuid())
+  hospitalId       String
+  departmentId     String
+  visitId          String
+  // Random, unguessable token for the patient link /t/:token (no login).
+  publicToken      String         @unique
+  number           String // e.g. "OPD-024"
+  displayName      String // first name or initials only
+  phone            String? // E.164, for SMS only; removed by the retention job
+  phoneRemovedAt   DateTime?
+  language         Language       @default(RW)
+  priority         Priority       @default(NORMAL)
+  priorityReason   PriorityReason @default(NONE)
+  channel          Channel        @default(WALK_IN)
+  status           TicketStatus   @default(CHECKED_IN)
+  preferredStaffId String?
+  staffId          String?
+  parentTicketId   String?
+  note             String?
+  // Position inside a priority band; starts as join time in ms. Reorder swaps sortKeys.
+  sortKey          Float
+  // People ahead when the ticket was created (for the progress line).
+  aheadAtJoin      Int            @default(0)
+  joinedAt         DateTime       @default(now())
+  checkedInAt      DateTime?
+  calledAt         DateTime?
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  hospital       Hospital     @relation(fields: [hospitalId], references: [id])
+  department     Department   @relation(fields: [departmentId], references: [id])
+  preferredStaff Staff?       @relation("TicketPreferredStaff", fields: [preferredStaffId], references: [id])
+  staff          Staff?       @relation("TicketStaff", fields: [staffId], references: [id])
+  parentTicket   Ticket?      @relation("TicketParent", fields: [parentTicketId], references: [id])
+  childTickets   Ticket[]     @relation("TicketParent")
+  visit          Visit        @relation(fields: [visitId], references: [id])
+  auditLogs      AuditLog[]
+  smsMessages    SmsMessage[]
+
+  @@index([departmentId, status])
+  @@index([visitId])
+  @@index([hospitalId, joinedAt])
+}
+
+/** Audit log: every queue action, status change and admin change, with who and why. */
+model AuditLog {
+  id         String   @id @default(cuid())
+  hospitalId String
+  actorId    String?
+  action     String // e.g. CALLED, MOVED_UP, STAFF_STATUS, DEPARTMENT_UPDATED
+  ticketId   String?
+  entityType String?
+  entityId   String?
+  reason     String?
+  detail     Json?
+  at         DateTime @default(now())
+
+  hospital Hospital @relation(fields: [hospitalId], references: [id])
+  actor    Staff?   @relation(fields: [actorId], references: [id])
+  ticket   Ticket?  @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
+  @@index([hospitalId, at])
+  @@index([ticketId])
+}
+
+/** SMS outbox. Messages are queued here and sent by the outbox worker with retries. */
+model SmsMessage {
+  id                String    @id @default(cuid())
+  hospitalId        String
+  ticketId          String?
+  // E.164 number; blanked by the retention job.
+  to                String?
+  language          Language
+  template          String
+  body              String
+  status            SmsStatus @default(QUEUED)
+  attempts          Int       @default(0)
+  nextAttemptAt     DateTime  @default(now())
+  provider          String?
+  providerMessageId String?   @unique
+  error             String?
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  hospital Hospital @relation(fields: [hospitalId], references: [id])
+  ticket   Ticket?  @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+
+  @@index([status, nextAttemptAt])
+  @@index([to])
+}
+
+/** Inbound SMS (feedback replies). The sender number is blanked by the retention job. */
+model InboundSms {
+  id         String   @id @default(cuid())
+  hospitalId String?
+  from       String?
+  text       String
+  visitId    String?
+  answer     FeedbackAnswer?
+  receivedAt DateTime @default(now())
+}
+
+/** Feeds the waiting-room TV. Ticket numbers, rooms and staff names only. */
+model CallLog {
+  id           String   @id @default(cuid())
+  hospitalId   String
+  ticketNumber String
+  room         String
+  staffName    String
+  at           DateTime @default(now())
+
+  hospital Hospital @relation(fields: [hospitalId], references: [id])
+
+  @@index([hospitalId, at])
+}
+
+/** One row per background job run (retention, daily close, SMS outbox). */
+model JobRun {
+  id         String    @id @default(cuid())
+  job        String
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  ok         Boolean?
+  summary    Json?
+  error      String?
+
+  @@index([job, startedAt])
+}

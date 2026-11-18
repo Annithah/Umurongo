@@ -1,0 +1,17 @@
+# Local PostgreSQL for development: `npm run db:up`
+# (Not needed if PostgreSQL is already installed on your machine.)
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: umurongo
+      POSTGRES_PASSWORD: umurongo
+      POSTGRES_DB: umurongo
+    ports:
+      - "5432:5432"
+    volumes:
+      - umurongo-db:/var/lib/postgresql/data
+
+volumes:
+  umurongo-db:

@@ -1,0 +1,38 @@
+# Render Blueprint: API + PostgreSQL. See DEPLOY.md.
+databases:
+  - name: umurongo-db
+    plan: free
+    databaseName: umurongo
+    user: umurongo
+
+services:
+  - type: web
+    name: umurongo-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run db:deploy -w @umurongo/api
+    startCommand: npm start -w @umurongo/api
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: umurongo-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false # your Vercel URL, e.g. https://umurongo.vercel.app
+      - key: PUBLIC_WEB_URL
+        sync: false # the same Vercel URL: used in patient links (QR code, SMS)
+      - key: SMS_MODE
+        value: simulate
+      - key: SMS_WEBHOOK_SECRET
+        generateValue: true
+      - key: DEMO_MODE
+        value: "true"
+      - key: JOBS_ENABLED
+        value: "true"

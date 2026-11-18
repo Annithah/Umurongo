@@ -1,0 +1,107 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-size: 15px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body {
+    @apply bg-bg font-sans text-ink antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-heading;
+  }
+  :focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-navy;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 1ms !important;
+    }
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-card border border-line bg-white;
+  }
+  .btn {
+    @apply inline-flex min-h-touch items-center justify-center gap-2 rounded-xl px-5 font-bold transition disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  /* Orange: the ONE main action of a screen (Register, Call next). */
+  .btn-primary {
+    @apply btn bg-orange text-white hover:brightness-95 active:brightness-90;
+  }
+  .btn-secondary {
+    @apply btn border border-line bg-white text-navy hover:bg-sky;
+  }
+  .btn-navy {
+    @apply btn bg-navy text-white hover:bg-navy-dark;
+  }
+  .btn-danger {
+    @apply btn border border-red/30 bg-white text-red hover:bg-red-bg;
+  }
+  .btn-sm {
+    @apply min-h-[36px] rounded-lg px-3 text-sm;
+  }
+  .ticket-number {
+    @apply font-heading font-black tabular-nums tracking-tight text-green;
+  }
+  .input {
+    @apply min-h-touch w-full rounded-xl border border-line bg-white px-3 text-[15px] outline-none transition focus:border-navy focus:ring-2 focus:ring-sky;
+  }
+  .input[aria-invalid='true'] {
+    @apply border-red;
+  }
+  .choice {
+    @apply flex min-h-touch w-full items-center justify-center gap-2 rounded-xl border border-line bg-white px-3 py-2 text-center font-bold text-ink transition hover:border-navy/40;
+  }
+  .choice-on {
+    @apply border-2 border-green bg-mint text-green-ink;
+  }
+  .label {
+    @apply mb-1 block text-sm font-bold text-muted;
+  }
+  .table-head {
+    @apply bg-sky text-left text-xs font-bold uppercase tracking-wide text-navy;
+  }
+}
+
+/* Printing: only the .printable block is printed (walk-in ticket on A6 or an 80 mm receipt printer). */
+.print-only {
+  display: none;
+}
+@media print {
+  @page {
+    size: A6;
+    margin: 6mm;
+  }
+  body {
+    background: white;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .printable,
+  .printable * {
+    visibility: visible;
+  }
+  .printable {
+    display: block !important;
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 76mm;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
